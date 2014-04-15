@@ -5,6 +5,9 @@ import datetime
 import FT950Config
 setRxParams = FT950Config.setRxParams
 rxOn        = FT950Config.rxOn
+setFreq = FT950Config.setFreq
+getRawSM = FT950Config.getRawSM
+getSP = FT950Config.getSP
 
 debug0 = False
 debug1 = False #not currently used
@@ -24,8 +27,18 @@ def debugPrint(level,debugStr):
         (level==2 and debug2) or
         (level==5 and debug5)):
         print('Debug',level,'-',debugStr)
+
+def genFileName():
+    fot = datetime.datetime.utcnow()
+    smfn = 'Noise-SM-'
+    smfn += str(fot)
+    smfn = smfn.rsplit('.',1)
+    smfn = smfn[0].replace(' ','at')
+    smfn = smfn.replace(':','',2)
+    smfn += '.txt'
+    return (smfn)
     
-def measureNoise():
+def measureNoise(smf):
     while True:
         for f in range (0, len(freq)):
             TF = datetime.datetime.utcnow()
@@ -37,10 +50,8 @@ def measureNoise():
                 time.sleep(slpTime)
             debugPrint(0,'Ready to start at '+str(freq[f])+str(datetime.datetime.utcnow()))
 
-            ustr='FA'+freq[f]+';'
-            bstr=bytes(ustr,'ascii')
-            ser.write(bstr)
-            time.sleep(1)
+            setFreq(ser, freq[f])
+            time.sleep(0.9)
 
             readings = [None]*samples
                 
@@ -52,13 +63,7 @@ def measureNoise():
                            str(TR.second))
             debugPrint(0,str(timeReadings))
             for i in range (0, samples):
-                ser.write(b'SM0;') #get S-Meter
-                mStr = bytes(ser.read(size=7))
-                mVal = ((int(mStr[3])-ord('0'))*100 +
-                        (int(mStr[4])-ord('0'))*10 +
-                        int(mStr[5])-ord('0'))
-                debugPrint(2,'mStr='+str(mStr)+str(' mval=')+str(mVal))
-
+                mVal = getRawSM(ser)
                 readings[i]=mVal;
                 debugPrint(5,'sleeping at '+str(timeReadings))
                 time.sleep((120.0-5.0)/samples)
@@ -68,11 +73,13 @@ def measureNoise():
             readings.sort()
             debugPrint(2,str(readings))
 
-            print(str(timeReadings) + ' Freq = ' + freq[f] +
-                      ' min = ' + str(readings[0]) +
-                      ' median = ' + str(readings[int(len(readings)/2)]) +
-                      ' max = ' + str(readings[len(readings)-1]))
-
+            outStr=(str(timeReadings) + ' Freq = ' + freq[f] +
+                      ' min = ' + getSP(str(readings[0])) +
+                      ' median = ' + getSP(str(readings[int(len(readings)/2)])) +
+                      ' max = ' + getSP(str(readings[len(readings)-1])))           
+            print(outStr)
+            print(outStr, file=smf)
+            smf.flush()
             if debug6:
                 return
 
@@ -88,6 +95,11 @@ ser.port = port
 ser.open()
 debugPrint(0,str(ser))
 
+#Open o/p files
+smfn = genFileName()
+dbfn = smfn.replace('-SM-','-db-')
+smf = open(smfn, 'w')
+
 # Configure RX
 rxOn(ser)
 for f in range (0, len(freq)) :
@@ -100,9 +112,11 @@ TR = datetime.datetime.utcnow()
 debugPrint(0,'TR = '+ str(TR))
 
 # Run test
-measureNoise()
+measureNoise(smf)
+
 #All done
-#close serial port
+#close files and serial port
+smf.close()
 ser.close()
 
 
